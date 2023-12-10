@@ -1,6 +1,7 @@
 "use client";
 
 import { useLocalAudio, useRoom } from "@huddle01/react/hooks";
+import { useEffect } from "react";
 import { Visualizer } from "react-sound-visualizer";
 
 interface Props {
@@ -18,6 +19,21 @@ function AudioControls({ roomId, accessToken }: Props) {
     isAudioOn,
     stream: audioStream,
   } = useLocalAudio();
+
+  useEffect(() => {
+    if (!audioStream) return;
+
+    const socket = new WebSocket(`
+    wss://api.rev.ai/speechtotext/v1/stream?access_token=${process.env.NEXT_PUBLIC_REVAI_ACCESS_TOKEN}&content_type=audio/x-raw;layout=interleaved;rate=16000;format=S16LE;channels=1`);
+
+    socket.addEventListener("open", (event) => {
+      console.log("Socket connection open ", event);
+    });
+
+    socket.addEventListener("message", (event) => {
+      console.log("Message from server ", event.data);
+    });
+  }, [audioStream]);
 
   return (
     <div>
