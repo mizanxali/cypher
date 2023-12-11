@@ -1,7 +1,7 @@
 "use client";
 
 import { useLocalAudio, useRoom } from "@huddle01/react/hooks";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Visualizer } from "react-sound-visualizer";
 
 interface Props {
@@ -10,7 +10,8 @@ interface Props {
 }
 
 function AudioControls({ roomId, accessToken }: Props) {
-  console.log({ roomId, accessToken });
+  const [captions, setCaptions] = useState("");
+  const wsRef = useRef<WebSocket | null>(null);
 
   const { joinRoom, state } = useRoom();
   const {
@@ -23,20 +24,52 @@ function AudioControls({ roomId, accessToken }: Props) {
   useEffect(() => {
     if (!audioStream) return;
 
-    const socket = new WebSocket(`
-    wss://api.rev.ai/speechtotext/v1/stream?access_token=${process.env.NEXT_PUBLIC_REVAI_ACCESS_TOKEN}&content_type=audio/x-raw;layout=interleaved;rate=16000;format=S16LE;channels=1`);
+    wsRef.current = new WebSocket(`
+    wss://api.rev.ai/speechtotext/v1/stream?access_token=${process.env.NEXT_PUBLIC_REVAI_ACCESS_TOKEN}&content_type=audio/webm;layout=interleaved;rate=16000;format=S16LE;channels=1&skip_postprocessing=true&priority=speed`);
 
-    socket.addEventListener("open", (event) => {
-      console.log("Socket connection open ", event);
+    const mediaRecorder = new MediaRecorder(audioStream, {
+      mimeType: "audio/webm",
     });
 
-    socket.addEventListener("message", (event) => {
-      console.log("Message from server ", event.data);
-    });
+    wsRef.current.onopen = () => {
+      console.log("Socket connection opened");
+
+      mediaRecorder.ondataavailable = async (e) => {
+        if (e.data.size > 0) {
+          const buffer = await e.data.arrayBuffer();
+          wsRef.current?.send(buffer);
+        }
+      };
+    };
+
+    wsRef.current.onmessage = (event) => {
+      console.log("Socket message received!", event.data);
+
+      const data = JSON.parse(event.data);
+      console.log({ type: data.type, elements: data.elements });
+
+      if (data.type === "partial") {
+        let text = "";
+        data.elements.forEach((textObj: any) => {
+          text = text + " " + textObj.value;
+        });
+        setCaptions(text);
+      }
+    };
+
+    mediaRecorder.start();
+
+    setInterval(() => {
+      if (mediaRecorder?.state === "recording") {
+        mediaRecorder.requestData();
+      }
+    }, 1000);
   }, [audioStream]);
 
   return (
     <div>
+      <div className="text-white text-2xl text-center">{captions}</div>
+
       {isAudioOn && (
         <Visualizer audio={audioStream} strokeColor="#fff" autoStart>
           {({ canvasRef }) => (
